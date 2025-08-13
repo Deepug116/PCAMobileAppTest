@@ -1,55 +1,29 @@
-require('dotenv').config({ path: './backend/.env' });
-const express = require('express');
-const sql = require('mssql');
-const cors = require('cors');
-require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config({path: __dirname + "/.env"});
+
+const assetsRouter = require("./routes/assets");
+const errorHandler = require("./middleware/error");
+const inventoryRouter = require("./routes/inventory");
+const noMaintenanceRouter = require("./routes/assetsNoMaintenance");
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-const config = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER,
-  database: process.env.DB_NAME,
-  options: {
-    encrypt: true,
-    trustServerCertificate: true,
-  },
-};
+// health checks
+app.get("/health", (_req, res) => res.json({ ok: true }));
 
-console.log('CONFIG:', config);
+// versioned API prefix
+app.use("/api/v1/assets", assetsRouter);
 
-app.get('/', (req, res) => {
-  res.send('✅ Backend API is running');
+// error handler last
+app.use(errorHandler);
+
+app.use("/api/v1/inventory", inventoryRouter);
+app.use("/api/v1/assets", noMaintenanceRouter);
+
+const PORT = parseInt(process.env.PORT || "3000", 10);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ API running at http://localhost:${PORT}`);
 });
-
-app.get('/assets', async (req, res) => {
-  try {
-    console.log("Connecting with config:" , config);
-    const pool = await sql.connect(config);
-    const result = await pool.request().query('SELECT * FROM dbo.tblAssets');
-
-    const cleanedData = result.recordset.map(row =>({
-      id: row.AssetID,
-      description: row.CommentsAS?.trim() || 'No description',
-      imagePath: row.ImageAS ? row.ImageAS.replace(/^\\\\|^\\|G:\\\\|G:\\/g, ''): null,
-      lastUpdated: row.LastUpdatedAS ? new Date(row.LastUpdatedAS).toLocaleDateString(): 'N/A',
-      }));
-
-      res.json(cleanedData);
-      await pool.close();
-
-    
-  } catch (err) {
-    console.error('SQL error:', err); 
-    res.status(500).send('Database query failed');
-  }
-});
-
-app.listen(3000, () => {
-  console.log('✅ API running at http://localhost:3000');
-});
-
-
